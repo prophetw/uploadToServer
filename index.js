@@ -49,8 +49,8 @@ const upload = multer({ storage: storage });
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 文件上传接口
-app.post('/upload', upload.single('file'), (req, res) => {
-  res.send('File uploaded successfully');
+app.post('/upload', upload.array('files'), (req, res) => {
+  res.send('Files uploaded successfully');
 });
 
 app.listen(port, () => {

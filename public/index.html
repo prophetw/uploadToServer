@@ -8,27 +8,27 @@
     #progressContainer {
       width: 100%;
       background-color: #f3f3f3;
+      margin-top: 20px;
     }
-    #progressBar {
+    .progressBar {
       width: 0%;
       height: 30px;
       background-color: #4caf50;
       text-align: center;
       line-height: 30px;
       color: white;
+      margin-bottom: 10px;
     }
   </style>
 </head>
 <body>
-  <h1>Upload a file</h1>
+  <h1>Upload files</h1>
   <form id="uploadForm" enctype="multipart/form-data">
-    <input type="file" name="file" id="fileInput">
+    <input type="file" name="files" id="fileInput" multiple>
     <button type="submit">Upload</button>
   </form>
 
-  <div id="progressContainer">
-    <div id="progressBar">0%</div>
-  </div>
+  <div id="progressContainer"></div>
 
   <script>
     document.getElementById('uploadForm').addEventListener('submit', function (event) {
@@ -36,9 +36,19 @@
       
       const formData = new FormData();
       const fileInput = document.getElementById('fileInput');
+      const progressContainer = document.getElementById('progressContainer');
+      progressContainer.innerHTML = '';
       
       if (fileInput.files.length > 0) {
-        formData.append('file', fileInput.files[0]);
+        for (let i = 0; i < fileInput.files.length; i++) {
+          formData.append('files', fileInput.files[i]);
+          
+          const progressBar = document.createElement('div');
+          progressBar.className = 'progressBar';
+          progressBar.id = `progressBar${i}`;
+          progressBar.textContent = '0%';
+          progressContainer.appendChild(progressBar);
+        }
         
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload', true);
@@ -46,23 +56,25 @@
         xhr.upload.onprogress = function (event) {
           if (event.lengthComputable) {
             const percentComplete = (event.loaded / event.total) * 100;
-            const progressBar = document.getElementById('progressBar');
-            progressBar.style.width = percentComplete + '%';
-            progressBar.textContent = Math.round(percentComplete) + '%';
+            const progressBars = document.querySelectorAll('.progressBar');
+            progressBars.forEach(progressBar => {
+              progressBar.style.width = percentComplete + '%';
+              progressBar.textContent = Math.round(percentComplete) + '%';
+            });
           }
         };
         
         xhr.onload = function () {
           if (xhr.status === 200) {
-            console.log('File uploaded successfully');
+            console.log('Files uploaded successfully');
           } else {
-            console.error('Error uploading file');
+            console.error('Error uploading files');
           }
         };
         
         xhr.send(formData);
       } else {
-        alert('Please select a file.');
+        alert('Please select files.');
       }
     });
   </script>
