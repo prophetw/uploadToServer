@@ -22,10 +22,11 @@
   </style>
 </head>
 <body>
-  <h1>Upload files</h1>
+  <h1>上传</h1>
   <form id="uploadForm" enctype="multipart/form-data">
     <input type="file" name="files" id="fileInput" multiple>
-    <button type="submit">Upload</button>
+    <!-- <input type="file" name="folder" id="folderInput" webkitdirectory directory> -->
+    <button type="submit">上传</button>
   </form>
 
   <div id="progressContainer"></div>
@@ -74,7 +75,7 @@
         
         xhr.send(formData);
       } else {
-        alert('Please select files.');
+        alert('请选择文件');
       }
     });
   </script>
