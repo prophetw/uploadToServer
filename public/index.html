@@ -43,6 +43,7 @@
       if (fileInput.files.length > 0) {
         for (let i = 0; i < fileInput.files.length; i++) {
           formData.append('files', fileInput.files[i]);
+          formData.append('name', 'cool');
           
           const progressBar = document.createElement('div');
           progressBar.className = 'progressBar';

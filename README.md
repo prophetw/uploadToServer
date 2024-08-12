@@ -11,9 +11,9 @@ node index.js -h
 ### Start server
 ```bash
 node index.js
+# default port 3000 and upload file to ./uploads
 
-
-#  启动 8092 端口，并且上传文件到 C:\Users\ 目录
+# 启动 8092 端口，并且上传文件到 C:\Users\ 目录
 node "index.js" -p 8092 -f "/root/code/uploadToServer"
 ```
 
