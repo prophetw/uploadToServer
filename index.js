@@ -6,9 +6,28 @@ const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const unzipper = require('unzipper');
 const Datastore = require('nedb');
+const cors = require('cors');
+// const bodyParser = require('body-parser');
 
+const dftResponse = {
+  code: 200,
+  message: 'success',
+  data: null
+}
+
+const dftError = {
+  code: 500,
+  message: 'error',
+  data: null
+}
 
 const app = express();
+app.use(cors());
+// 对于 Express 4.16.0 或更高版本，可以直接使用内置的 express.json() 和 express.urlencoded()
+app.use(express.json()); // 用于解析 application/json
+app.use(express.urlencoded({ extended: true })); // 用于解析 application/x-www-form-urlencoded
+
+
 // 创建并加载数据库
 const db = new Datastore({ filename: 'gis_data.db', autoload: true });
 
@@ -62,12 +81,57 @@ const isFileZip = (file) => {
 
 
 app.get('/list', (req, res) => {
+  const token = req.headers['access-token'];
+  if(!token){
+    const errRes = {...dftError};
+    errRes.code = 401;
+    errRes.message = 'token is required';
+    res.send('token is required');
+    return 
+  }
+  const response = {...dftResponse};
   db.find({}, (err, docs) => {
     if (err) {
       console.error('Error getting file list:', err);
       res.send('Error getting file list');
     } else {
-      res.send(docs);
+      response.data = docs;
+      res.send(response);
+    }
+  });
+});
+
+app.post('/page/:page', (req, res) => {
+
+// {
+//      companyName: 'test',
+//      projectName: '',
+//      fileName: '',
+//      createDate: '',
+//      createUser: '',
+//      url: '',
+// }
+
+
+  const page = req.params.page;
+  // filter by createUser 
+  const body = req.body || {};
+  const createUser = body.createUser;
+  const pageSize = body.pageSize || 10;
+  const limit = pageSize;
+  if(!createUser){
+    res.send('user info ');
+    return
+  }
+  db.find({createUser: createUser}).skip((page - 1) * limit).limit(limit).exec((err, docs) => {
+    if (err) {
+      console.error('Error getting file list:', err);
+      res.send('Error getting file list');
+    } else {
+
+      const response = {...dftResponse};
+      response.data = docs;
+      res.send(response);
     }
   });
 });
@@ -79,22 +143,48 @@ app.post('/upload', upload.array('files'), (req, res) => {
   // 如果文件是 zip 格式，解压缩，并且删除原文件
   const files = req.files;
   // const name = req.body.name || 'unknown';
-  const body = req.body || {};
+  const token = req.headers['access-token'];
+  // const files = req.body.file;
+  const companyName = req.body.companyName || 'unknown';
+  const projectName = req.body.projectName || 'unknown';
+  // const createDate = new Date().toLocaleDateString().replace(/\//g, '-');
+  const options = { year: 'numeric', month: 'numeric', day: 'numeric' };
+  const formattedDate = new Date().toLocaleDateString('zh-CN', options).replace(/\//g, '-');
+  const createDate = formattedDate;
+
+  const createUser = req.body.createUser;
+  const body = {
+    companyName,
+    projectName,
+    createDate,
+    createUser,
+  }
+
+
+  const response = {...dftResponse};
+  const errRes = {...dftError};
+  const responseAry = []
 
   files.forEach((file) => {
     if (isFileZip(file)) {
       const filePath = path.join(absoluteUploadPath, file.originalname);
-      const unzipPath = path.join(absoluteUploadPath, file.originalname.split('.')[0]);
+      const folderName = file.originalname.split('.')[0] + '_' + Date.now();
+      const unzipPath = path.join(absoluteUploadPath, folderName)
       try {
         fs.mkdirSync(unzipPath);
         fs.createReadStream(filePath).pipe(unzipper.Extract({ path: unzipPath }))
           .on('close', () => {
             // 解压完成后删除原文件
-            fs.unlinkSync(filePath);
+            // fs.unlinkSync(filePath);
             console.log(`Unzipped and deleted: ${file.originalname}`);
 
             // 保存文件信息到数据库
-            db.insert({ filePath: unzipPath, ...body}, (err, newDoc) => {
+            db.insert({ 
+              ...body, 
+              fileName: file.originalname,
+              filePath: folderName,
+            }, 
+              (err, newDoc) => {
               if (err) {
                 console.error('Error saving file info:', err);
               } else {
@@ -112,7 +202,11 @@ app.post('/upload', upload.array('files'), (req, res) => {
       }
     } else{
       // 保存文件信息到数据库
-      db.insert({ ...body, filePath: path.join(absoluteUploadPath, file.originalname) }, (err, newDoc) => {
+      db.insert({ 
+        ...body, 
+        fileName: file.originalname,
+        filePath: file.originalname, 
+      }, (err, newDoc) => {
         if (err) {
           console.error('Error saving file info:', err);
         } else {
