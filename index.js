@@ -82,14 +82,14 @@ const isFileZip = (file) => {
 
 app.get('/list', (req, res) => {
   const token = req.headers['access-token'];
-  if(!token){
-    const errRes = {...dftError};
+  if (!token) {
+    const errRes = { ...dftError };
     errRes.code = 401;
     errRes.message = 'token is required';
     res.send('token is required');
-    return 
+    return
   }
-  const response = {...dftResponse};
+  const response = { ...dftResponse };
   db.find({}, (err, docs) => {
     if (err) {
       console.error('Error getting file list:', err);
@@ -103,14 +103,14 @@ app.get('/list', (req, res) => {
 
 app.post('/page/:page', (req, res) => {
 
-// {
-//      companyName: 'test',
-//      projectName: '',
-//      fileName: '',
-//      createDate: '',
-//      createUser: '',
-//      url: '',
-// }
+  // {
+  //      companyName: 'test',
+  //      projectName: '',
+  //      fileName: '',
+  //      createDate: '',
+  //      createUser: '',
+  //      url: '',
+  // }
 
 
   const page = req.params.page;
@@ -119,40 +119,103 @@ app.post('/page/:page', (req, res) => {
   const createUser = body.createUser;
   const pageSize = body.pageSize || 10;
   const limit = pageSize;
-  if(!createUser){
+  const searchVal = body.searchVal || "";
+  const regExp = new RegExp(searchVal, 'i');
+  if (!createUser) {
     res.send('user info ');
     return
   }
-  db.find({createUser: createUser}).skip((page - 1) * limit).limit(limit).exec((err, docs) => {
+  const findObj = {
+    createUser: createUser,
+  }
+  if (searchVal) {
+    findObj.$or = [
+      { companyName: { $regex: regExp } },
+      { projectName: { $regex: regExp } },
+      { fileName: { $regex: regExp } },
+      { createDate: { $regex: regExp } },
+    ]
+  }
+  db.find(findObj).skip((page - 1) * limit).limit(limit).exec((err, docs) => {
     if (err) {
       console.error('Error getting file list:', err);
       res.send('Error getting file list');
     } else {
 
-      const response = {...dftResponse};
+      const response = { ...dftResponse };
       response.data = docs;
       res.send(response);
     }
   });
 });
 
+app.delete('/delete/:id', (req, res) => {
+  const id = req.params.id;
+  const token = req.headers['access-token'];
+  const response = { ...dftResponse };
+  const errRes = { ...dftError };
+  if (!token) {
+    errRes.code = 401;
+    errRes.message = 'token is required';
+    res.send('token is required');
+    return
+  }
+
+  try {
+    // need to delete the file from the disk
+    db.findOne({ _id: id }, (err, doc) => {
+      if (err) {
+        console.error('Error getting file info:', err);
+        errRes.message = 'Error getting file info';
+        errRes.code = 900000;
+        // res.send(errRes);
+        // return;
+      }
+      if (!doc) {
+        console.error('File not found');
+        errRes.message = 'File not found';
+        errRes.code = 900002;
+        // res.send(errRes);
+        // return;
+      }
+      const folderAbsPath = doc.folderAbsPath;
+      if (folderAbsPath) {
+        fs.rmSync(folderAbsPath, { recursive: true });
+        console.log('Folder deleted successfully');
+      }
+    })
+  } catch (error) {
+    console.log(' ', error);
+  }
+
+  // delete from db
+  db.remove({ _id: id }, {}, (err, numRemoved) => {
+    if (err) {
+      console.error('Error deleting file:', err);
+      errRes.message = 'Error deleting file';
+      errRes.code = 900001;
+      res.send(errRes);
+    } else {
+      // console.log('File deleted successfully');
+      response.message = 'Deleted successfully';
+      res.send(response);
+    }
+  });
+})
+
 
 // 文件上传接口
 app.post('/upload', upload.array('files'), (req, res) => {
-  res.send('Files uploaded successfully');
   // 如果文件是 zip 格式，解压缩，并且删除原文件
   const files = req.files;
-  // const name = req.body.name || 'unknown';
   const token = req.headers['access-token'];
-  // const files = req.body.file;
   const companyName = req.body.companyName || 'unknown';
   const projectName = req.body.projectName || 'unknown';
-  // const createDate = new Date().toLocaleDateString().replace(/\//g, '-');
   const options = { year: 'numeric', month: 'numeric', day: 'numeric' };
   const formattedDate = new Date().toLocaleDateString('zh-CN', options).replace(/\//g, '-');
   const createDate = formattedDate;
-
   const createUser = req.body.createUser;
+
   const body = {
     companyName,
     projectName,
@@ -161,60 +224,73 @@ app.post('/upload', upload.array('files'), (req, res) => {
   }
 
 
-  const response = {...dftResponse};
-  const errRes = {...dftError};
+  const response = { ...dftResponse };
+  const errRes = { ...dftError };
   const responseAry = []
+  // 创建 Promise 数组来跟踪所有文件的处理状态
+  let promises = files.map(file => {
+    return new Promise((resolve, reject) => {
+      if (isFileZip(file)) { // 假设有一个 isFileZip 函数来检测是否为zip文件
+        const filePath = path.join(absoluteUploadPath, file.originalname);
+        const folderName = file.originalname.split('.')[0] + '_' + Date.now();
+        const unzipPath = path.join(absoluteUploadPath, folderName);
+        const absoluteFolderPath = path.resolve(absoluteUploadPath, folderName);
+        const fileAbsPath = path.resolve(absoluteUploadPath, file.originalname);
 
-  files.forEach((file) => {
-    if (isFileZip(file)) {
-      const filePath = path.join(absoluteUploadPath, file.originalname);
-      const folderName = file.originalname.split('.')[0] + '_' + Date.now();
-      const unzipPath = path.join(absoluteUploadPath, folderName)
-      try {
-        fs.mkdirSync(unzipPath);
-        fs.createReadStream(filePath).pipe(unzipper.Extract({ path: unzipPath }))
-          .on('close', () => {
-            // 解压完成后删除原文件
-            // fs.unlinkSync(filePath);
-            console.log(`Unzipped and deleted: ${file.originalname}`);
-
-            // 保存文件信息到数据库
-            db.insert({ 
-              ...body, 
-              fileName: file.originalname,
-              filePath: folderName,
-            }, 
-              (err, newDoc) => {
-              if (err) {
-                console.error('Error saving file info:', err);
-              } else {
-                console.log('File info saved:', newDoc);
-              }
+        try {
+          fs.mkdirSync(unzipPath);
+          fs.createReadStream(filePath).pipe(unzipper.Extract({ path: unzipPath }))
+            .on('close', () => {
+              db.insert({
+                ...body,
+                fileName: file.originalname,
+                filePath: folderName,
+                fileAbsPath: fileAbsPath,
+                folderAbsPath: absoluteFolderPath
+              }, (err, newDoc) => {
+                if (err) {
+                  console.error('Error saving file info:', err);
+                  reject(err);
+                } else {
+                  console.log('File info saved:', newDoc);
+                  resolve();
+                }
+              });
+            })
+            .on('error', (err) => {
+              console.error(`Error unzipping file ${file.originalname}:`, err);
+              reject(err);
             });
-
-          })
-          .on('error', (err) => {
-            console.error(`Error unzipping file ${file.originalname}:`, err);
-          });
-
-      } catch (error) {
-        console.error(`Error unzipping file ${file.originalname}:`, error);
-      }
-    } else{
-      // 保存文件信息到数据库
-      db.insert({ 
-        ...body, 
-        fileName: file.originalname,
-        filePath: file.originalname, 
-      }, (err, newDoc) => {
-        if (err) {
-          console.error('Error saving file info:', err);
-        } else {
-          console.log('File info saved:', newDoc);
+        } catch (error) {
+          console.error(`Error unzipping file ${file.originalname}:`, error);
+          reject(error);
         }
-      });
-    }
+      } else {
+        db.insert({
+          ...body,
+          fileName: file.originalname,
+          filePath: file.originalname,
+        }, (err, newDoc) => {
+          if (err) {
+            console.error('Error saving file info:', err);
+            reject(err);
+          } else {
+            console.log('File info saved:', newDoc);
+            resolve();
+          }
+        });
+      }
+    });
   });
+
+  // 等待所有文件处理完毕
+  Promise.all(promises)
+    .then(() => {
+      res.send({ message: "所有文件上传和处理成功" });
+    })
+    .catch(error => {
+      res.status(500).send({ error: "处理文件时发生错误" });
+    });
 });
 
 app.listen(port, () => {
