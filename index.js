@@ -133,18 +133,28 @@ app.post('/page/:page', (req, res) => {
       { companyName: { $regex: regExp } },
       { projectName: { $regex: regExp } },
       { fileName: { $regex: regExp } },
-      { createDate: { $regex: regExp } },
     ]
   }
-  db.find(findObj).skip((page - 1) * limit).limit(limit).exec((err, docs) => {
+  db.count(findObj, (err, count) => {
     if (err) {
-      console.error('Error getting file list:', err);
-      res.send('Error getting file list');
+      const errRes = { ...dftError };
+      errRes.code = 900003;
+      errRes.message = 'Error getting file list count';
+      res.send(errRes);
     } else {
-
-      const response = { ...dftResponse };
-      response.data = docs;
-      res.send(response);
+      db.find(findObj).skip((page - 1) * limit).limit(limit).exec((err, docs) => {
+        if (err) {
+          console.error('Error getting file list:', err);
+          res.send('Error getting file list');
+        } else {
+          const response = { ...dftResponse };
+          response.data = {
+            list: docs,
+            count,
+          };
+          res.send(response);
+        }
+      });
     }
   });
 });
