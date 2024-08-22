@@ -4,10 +4,47 @@ const path = require('path');
 const fs = require('fs');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
-const unzipper = require('unzipper');
 const Datastore = require('nedb');
 const cors = require('cors');
+const StreamZip = require('node-stream-zip');
+
 // const bodyParser = require('body-parser');
+
+
+
+async function extractZip(zipPath, outputDir) {
+  const zip = new StreamZip.async({ file: zipPath });
+
+  try {
+    // 获取并输出条目计数
+    const count = await zip.entriesCount;
+    console.log(`Entries read: ${count}`);
+
+    const entries = await zip.entries();
+    for (const entry of Object.values(entries)) {
+      const entryName = entry.name;
+      if (entry.isDirectory) {
+        // console.log('Skipping directory:', entryName);
+        continue;
+      }
+
+      // console.log(`Extracting: ${entryName}`);
+      const outputPath = path.join(outputDir, entryName);
+      const dirName = path.dirname(outputPath);
+      fs.mkdirSync(dirName, { recursive: true });
+
+      // 异步提取文件
+      await zip.extract(entry.name, outputPath);
+      // console.log(`Extracted: ${entryName}`);
+    }
+  } catch (err) {
+    console.error('Error occurred:', err);
+  } finally {
+    await zip.close();
+    console.log('Archive closed.');
+  }
+}
+
 
 const dftResponse = {
   code: 200,
@@ -214,7 +251,6 @@ app.delete('/delete/:id', (req, res) => {
 })
 
 
-// 文件上传接口
 app.post('/upload', upload.array('files'), (req, res) => {
   // 如果文件是 zip 格式，解压缩，并且删除原文件
   const files = req.files;
@@ -239,7 +275,7 @@ app.post('/upload', upload.array('files'), (req, res) => {
   const responseAry = []
   // 创建 Promise 数组来跟踪所有文件的处理状态
   let promises = files.map(file => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       if (isFileZip(file)) { // 假设有一个 isFileZip 函数来检测是否为zip文件
         const filePath = path.join(absoluteUploadPath, file.originalname);
         const folderName = file.originalname.split('.')[0] + '_' + Date.now();
@@ -249,28 +285,48 @@ app.post('/upload', upload.array('files'), (req, res) => {
 
         try {
           fs.mkdirSync(unzipPath);
-          fs.createReadStream(filePath).pipe(unzipper.Extract({ path: unzipPath }))
-            .on('close', () => {
-              db.insert({
-                ...body,
-                fileName: file.originalname,
-                filePath: folderName,
-                fileAbsPath: fileAbsPath,
-                folderAbsPath: absoluteFolderPath
-              }, (err, newDoc) => {
-                if (err) {
-                  console.error('Error saving file info:', err);
-                  reject(err);
-                } else {
-                  console.log('File info saved:', newDoc);
-                  resolve();
-                }
-              });
-            })
-            .on('error', (err) => {
-              console.error(`Error unzipping file ${file.originalname}:`, err);
+
+          await extractZip(filePath, unzipPath);
+
+          db.insert({
+            ...body,
+            fileName: file.originalname,
+            filePath: folderName,
+            fileAbsPath: fileAbsPath,
+            folderAbsPath: absoluteFolderPath
+          }, (err, newDoc) => {
+            if (err) {
+              console.error('Error saving file info:', err);
               reject(err);
-            });
+            } else {
+              console.log('File info saved:', newDoc);
+              resolve();
+            }
+          });
+
+
+          // fs.createReadStream(filePath).pipe(unzipper.Extract({ path: unzipPath }))
+          //   .on('close', () => {
+          //     db.insert({
+          //       ...body,
+          //       fileName: file.originalname,
+          //       filePath: folderName,
+          //       fileAbsPath: fileAbsPath,
+          //       folderAbsPath: absoluteFolderPath
+          //     }, (err, newDoc) => {
+          //       if (err) {
+          //         console.error('Error saving file info:', err);
+          //         reject(err);
+          //       } else {
+          //         console.log('File info saved:', newDoc);
+          //         resolve();
+          //       }
+          //     });
+          //   })
+          //   .on('error', (err) => {
+          //     console.error(`Error unzipping file ${file.originalname}:`, err);
+          //     reject(err);
+          //   });
         } catch (error) {
           console.error(`Error unzipping file ${file.originalname}:`, error);
           reject(error);
@@ -302,6 +358,96 @@ app.post('/upload', upload.array('files'), (req, res) => {
       res.status(500).send({ error: "处理文件时发生错误" });
     });
 });
+
+
+// 文件上传接口
+// app.post('/upload1', upload.array('files'), (req, res) => {
+//   // 如果文件是 zip 格式，解压缩，并且删除原文件
+//   const files = req.files;
+//   const token = req.headers['access-token'];
+//   const companyName = req.body.companyName || 'unknown';
+//   const projectName = req.body.projectName || 'unknown';
+//   const options = { year: 'numeric', month: 'numeric', day: 'numeric' };
+//   const formattedDate = new Date().toLocaleDateString('zh-CN', options).replace(/\//g, '-');
+//   const createDate = formattedDate;
+//   const createUser = req.body.createUser;
+
+//   const body = {
+//     companyName,
+//     projectName,
+//     createDate,
+//     createUser,
+//   }
+
+
+//   const response = { ...dftResponse };
+//   const errRes = { ...dftError };
+//   const responseAry = []
+//   // 创建 Promise 数组来跟踪所有文件的处理状态
+//   let promises = files.map(file => {
+//     return new Promise((resolve, reject) => {
+//       if (isFileZip(file)) { // 假设有一个 isFileZip 函数来检测是否为zip文件
+//         const filePath = path.join(absoluteUploadPath, file.originalname);
+//         const folderName = file.originalname.split('.')[0] + '_' + Date.now();
+//         const unzipPath = path.join(absoluteUploadPath, folderName);
+//         const absoluteFolderPath = path.resolve(absoluteUploadPath, folderName);
+//         const fileAbsPath = path.resolve(absoluteUploadPath, file.originalname);
+
+//         try {
+//           fs.mkdirSync(unzipPath);
+//           fs.createReadStream(filePath).pipe(unzipper.Extract({ path: unzipPath }))
+//             .on('close', () => {
+//               db.insert({
+//                 ...body,
+//                 fileName: file.originalname,
+//                 filePath: folderName,
+//                 fileAbsPath: fileAbsPath,
+//                 folderAbsPath: absoluteFolderPath
+//               }, (err, newDoc) => {
+//                 if (err) {
+//                   console.error('Error saving file info:', err);
+//                   reject(err);
+//                 } else {
+//                   console.log('File info saved:', newDoc);
+//                   resolve();
+//                 }
+//               });
+//             })
+//             .on('error', (err) => {
+//               console.error(`Error unzipping file ${file.originalname}:`, err);
+//               reject(err);
+//             });
+//         } catch (error) {
+//           console.error(`Error unzipping file ${file.originalname}:`, error);
+//           reject(error);
+//         }
+//       } else {
+//         db.insert({
+//           ...body,
+//           fileName: file.originalname,
+//           filePath: file.originalname,
+//         }, (err, newDoc) => {
+//           if (err) {
+//             console.error('Error saving file info:', err);
+//             reject(err);
+//           } else {
+//             console.log('File info saved:', newDoc);
+//             resolve();
+//           }
+//         });
+//       }
+//     });
+//   });
+
+//   // 等待所有文件处理完毕
+//   Promise.all(promises)
+//     .then(() => {
+//       res.send({ message: "所有文件上传和处理成功" });
+//     })
+//     .catch(error => {
+//       res.status(500).send({ error: "处理文件时发生错误" });
+//     });
+// });
 
 app.listen(port, () => {
   console.log(`
