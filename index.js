@@ -110,6 +110,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // 把 uploads 目录设置为静态文件目录 用户访问 /uploads 可以访问到 uploads 目录下的文件
 app.use('/uploads', express.static(path.join(absoluteUploadPath)));
+app.use('/demo', express.static(path.join(absoluteUploadPath, 'dist')));
+app.use('/sceneeditor', express.static(path.join(absoluteUploadPath, 'sceneeditor')));
 
 
 const isFileZip = (file) => {
@@ -278,12 +280,20 @@ app.post('/upload', upload.array('files'), (req, res) => {
     return new Promise(async (resolve, reject) => {
       if (isFileZip(file)) { // 假设有一个 isFileZip 函数来检测是否为zip文件
         const filePath = path.join(absoluteUploadPath, file.originalname);
-        const folderName = file.originalname.split('.')[0] + '_' + Date.now();
+        const originalname = file.originalname;
+        let folderName = file.originalname.split('.')[0];
+        if (originalname !== 'sceneeditor.zip' && originalname !== 'dist.zip') {
+          folderName = file.originalname.split('.')[0] + '_' + Date.now();
+        }
+
         const unzipPath = path.join(absoluteUploadPath, folderName);
         const absoluteFolderPath = path.resolve(absoluteUploadPath, folderName);
         const fileAbsPath = path.resolve(absoluteUploadPath, file.originalname);
 
         try {
+          if (fs.existsSync(unzipPath)) {
+            fs.rmSync(unzipPath, { recursive: true });
+          }
           fs.mkdirSync(unzipPath);
 
           await extractZip(filePath, unzipPath);
